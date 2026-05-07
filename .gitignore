@@ -1,0 +1,7 @@
+node_modules/
+data/
+logs/
+ssh-keys/
+*.log
+.env
+update-manager.tar.gz
