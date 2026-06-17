@@ -10,28 +10,32 @@ const upload = multer({ dest: 'ssh-keys/' });
 
 router.get('/', async (req, res) => {
     try {
-        res.json(await dbAll('SELECT id, name, auth_type, username, created_at FROM credentials ORDER BY name'));
+        res.json(await dbAll('SELECT id, name, auth_type, username, credential_subtype, created_at FROM credentials ORDER BY name'));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/', upload.single('ssh_key'), async (req, res) => {
     const { name, auth_type, username, password } = req.body;
-    if (!name || !auth_type || !username)
-        return res.status(400).json({ error: 'name, auth_type, and username are required' });
-    if (auth_type === 'password' && !password)
-        return res.status(400).json({ error: 'Password is required for password auth' });
-    if (auth_type === 'ssh_key' && !req.file)
-        return res.status(400).json({ error: 'SSH key file is required for ssh_key auth' });
+    const isApiToken = auth_type === 'api_token';
 
-    const password_hash = auth_type === 'password' ? encrypt(password) : null;
-    const ssh_key_path = auth_type === 'ssh_key' ? req.file.path : null;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    if (!isApiToken && !username) return res.status(400).json({ error: 'username is required' });
+    if (isApiToken && !password) return res.status(400).json({ error: 'API token value is required' });
+    if (auth_type === 'password' && !password) return res.status(400).json({ error: 'Password is required for password auth' });
+    if (auth_type === 'ssh_key' && !req.file) return res.status(400).json({ error: 'SSH key file is required for ssh_key auth' });
+
+    const dbAuthType        = isApiToken ? 'password' : auth_type;
+    const dbUsername        = isApiToken ? 'api-token' : username;
+    const credential_subtype = isApiToken ? 'api_token' : null;
+    const password_hash     = (isApiToken || auth_type === 'password') ? encrypt(password) : null;
+    const ssh_key_path      = auth_type === 'ssh_key' ? req.file.path : null;
 
     try {
         const result = await dbRun(
-            'INSERT INTO credentials (name, auth_type, username, password_hash, ssh_key_path) VALUES (?, ?, ?, ?, ?)',
-            [name, auth_type, username, password_hash, ssh_key_path]
+            'INSERT INTO credentials (name, auth_type, username, password_hash, ssh_key_path, credential_subtype) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, dbAuthType, dbUsername, password_hash, ssh_key_path, credential_subtype]
         );
-        res.json({ id: result.lastID, name, auth_type, username });
+        res.json({ id: result.lastID, name, auth_type: isApiToken ? 'api_token' : auth_type, username: dbUsername, credential_subtype });
     } catch (err) {
         if (err.message.includes('UNIQUE'))
             return res.status(400).json({ error: 'A credential with that name already exists' });

@@ -173,6 +173,18 @@ const MIGRATIONS = [
         name: 'add_truenas_connection_settings',
         sql: `ALTER TABLE servers ADD COLUMN truenas_protocol TEXT NOT NULL DEFAULT 'https';
               ALTER TABLE servers ADD COLUMN truenas_verify_ssl BOOLEAN NOT NULL DEFAULT 0`
+    },
+    {
+        id: 8,
+        name: 'add_home_assistant_connection_settings',
+        sql: `ALTER TABLE servers ADD COLUMN ha_protocol TEXT NOT NULL DEFAULT 'http';
+              ALTER TABLE servers ADD COLUMN ha_port INTEGER NOT NULL DEFAULT 8123;
+              ALTER TABLE servers ADD COLUMN ha_verify_ssl BOOLEAN NOT NULL DEFAULT 0`
+    },
+    {
+        id: 9,
+        name: 'add_credential_subtype',
+        sql: `ALTER TABLE credentials ADD COLUMN credential_subtype TEXT`
     }
 ];
 

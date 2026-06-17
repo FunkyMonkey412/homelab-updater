@@ -144,8 +144,193 @@ async function updateServerTrueNAS(server, progressCallback = null, updateType =
     }
 }
 
+function makeHAClient(server) {
+    const protocol   = server.ha_protocol || 'http';
+    const port       = server.ha_port     || 8123;
+    const verifySSL  = !!server.ha_verify_ssl;
+    const httpModule = protocol === 'https' ? https : http;
+    const agent      = protocol === 'https' ? new https.Agent({ rejectUnauthorized: verifySSL }) : undefined;
+    return { httpModule, agent, port };
+}
+
+async function resolveHAToken(server) {
+    let token;
+    if (server.credential_id) {
+        const cred = await dbGet('SELECT * FROM credentials WHERE id = ?', [server.credential_id]);
+        if (!cred) throw new Error('Saved credential not found');
+        token = cred.password_hash ? decrypt(cred.password_hash) : null;
+    } else {
+        token = server.password_hash ? decrypt(server.password_hash) : null;
+    }
+    if (!token) throw new Error('A long-lived access token is required for Home Assistant');
+    return token;
+}
+
+function makeHARequest(server, token, { httpModule, agent, port }) {
+    return (method, path, body = null) => new Promise((resolve, reject) => {
+        const payload = body !== null ? JSON.stringify(body) : null;
+        const req = httpModule.request({
+            hostname: server.ip_address,
+            port,
+            path,
+            method,
+            ...(agent ? { agent } : {}),
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {})
+            }
+        }, res => {
+            let data = '';
+            res.on('data', chunk => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode >= 400) return reject(new Error(`HA API ${res.statusCode}: ${data}`));
+                try { resolve(JSON.parse(data)); } catch { resolve(data); }
+            });
+        });
+        req.on('error', reject);
+        if (payload) req.write(payload);
+        req.end();
+    });
+}
+
+async function rebootServerHomeAssistant(server) {
+    try {
+        const token  = await resolveHAToken(server);
+        const client = makeHAClient(server);
+        const apiRequest = makeHARequest(server, token, client);
+
+        await new Promise((resolve, reject) => {
+            const payload = '{}';
+            const req = client.httpModule.request({
+                hostname: server.ip_address,
+                port: client.port,
+                path: '/api/services/hassio/host_reboot',
+                method: 'POST',
+                ...(client.agent ? { agent: client.agent } : {}),
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                }
+            }, () => resolve());
+            req.on('error', err => {
+                if (['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ENOTFOUND'].includes(err.code)) resolve();
+                else reject(err);
+            });
+            req.write(payload);
+            req.end();
+        });
+
+        await dbRun('UPDATE servers SET needs_reboot=0 WHERE id=?', [server.id]);
+        return { success: true, message: 'Home Assistant reboot initiated' };
+    } catch (error) {
+        return { success: false, message: error.message };
+    }
+}
+
+async function updateServerHomeAssistant(server, progressCallback = null, updateType = 'manual') {
+    const emit = (stage, message) => progressCallback?.({ stage, message });
+
+    try {
+        const token  = await resolveHAToken(server);
+        const client = makeHAClient(server);
+        const apiRequest = makeHARequest(server, token, client);
+
+        const apiGet  = path        => apiRequest('GET',  path);
+        const apiPost = (path, body) => apiRequest('POST', path, body);
+
+        emit('connecting', `Connecting to ${server.name}...`);
+
+        // Check Core update via entity state
+        emit('checking', 'Checking for HA Core update...');
+        let coreUpdated = false;
+        let coreVersion = null;
+        let coreEntity;
+        try {
+            coreEntity = await apiGet('/api/states/update.home_assistant_core_update');
+        } catch (e) {
+            throw new Error(`Cannot reach Home Assistant at ${server.ip_address}:${client.port} — ${e.message}`);
+        }
+
+        if (coreEntity?.state === 'on') {
+            coreVersion = coreEntity.attributes?.latest_version;
+            const current = coreEntity.attributes?.installed_version || 'unknown';
+            emit('updating', `Updating HA Core ${current} → ${coreVersion}...`);
+            try {
+                await apiPost('/api/services/update/install', { entity_id: 'update.home_assistant_core_update', backup: false });
+            } catch { /* connection drop while HA core restarts */ }
+            coreUpdated = true;
+        } else {
+            const ver = coreEntity?.attributes?.installed_version || 'unknown';
+            emit('checking', `HA Core is up to date (${ver})`);
+        }
+
+        if (coreUpdated) await new Promise(r => setTimeout(r, 5000));
+
+        // Check OS update via entity state
+        emit('checking', 'Checking for HA OS update...');
+        let osUpdated = false;
+        let osVersion = null;
+        let needsReboot = false;
+        let osEntity;
+        try {
+            osEntity = await apiGet('/api/states/update.home_assistant_operating_system_update');
+        } catch {
+            osEntity = { state: 'off' };
+        }
+
+        if (osEntity?.state === 'on') {
+            osVersion = osEntity.attributes?.latest_version;
+            const current = osEntity.attributes?.installed_version || 'unknown';
+            emit('updating', `Updating HA OS ${current} → ${osVersion} — system will reboot...`);
+            try {
+                await apiPost('/api/services/update/install', { entity_id: 'update.home_assistant_operating_system_update', backup: false });
+            } catch { /* connection drop on reboot */ }
+            osUpdated = true;
+            needsReboot = true;
+        } else {
+            const ver = osEntity?.attributes?.installed_version || 'unknown';
+            emit('checking', `HA OS is up to date (${ver})`);
+        }
+
+        if (!coreUpdated && !osUpdated) {
+            await dbRun('UPDATE servers SET status=?, last_update=? WHERE id=?',
+                ['updated', new Date().toISOString(), server.id]);
+            const message = 'No updates available';
+            emit('completed', message);
+            await logUpdate('server', server.id, server.name, updateType, true, message, JSON.stringify({ available: false }));
+            notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: true, message });
+            return { success: true, message, needsReboot: false };
+        }
+
+        const parts = [];
+        if (coreUpdated) parts.push(`Core → ${coreVersion}`);
+        if (osUpdated)   parts.push(`OS → ${osVersion} (rebooting)`);
+
+        await dbRun('UPDATE servers SET status=?, last_update=?, needs_reboot=? WHERE id=?',
+            ['updated', new Date().toISOString(), needsReboot ? 1 : 0, server.id]);
+
+        const message = `Home Assistant updated: ${parts.join(', ')}`;
+        emit('completed', message);
+        await logUpdate('server', server.id, server.name, updateType, true, message,
+            JSON.stringify({ coreUpdated, coreVersion, osUpdated, osVersion, needsReboot }));
+        notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: true, message });
+        return { success: true, message, needsReboot };
+
+    } catch (error) {
+        console.error(`[update] HomeAssistant ${server.name}: ${error.message}`);
+        await dbRun('UPDATE servers SET status=? WHERE id=?', ['failed', server.id]);
+        emit('failed', `Update failed: ${error.message}`);
+        await logUpdate('server', server.id, server.name, updateType, false, error.message, JSON.stringify({ error: error.message }));
+        notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: false, message: error.message });
+        return { success: false, message: error.message };
+    }
+}
+
 async function updateServer(server, progressCallback = null, updateType = 'manual') {
-    if (server.os_type === 'truenas_ce') return updateServerTrueNAS(server, progressCallback, updateType);
+    if (server.os_type === 'truenas_ce')     return updateServerTrueNAS(server, progressCallback, updateType);
+    if (server.os_type === 'home_assistant') return updateServerHomeAssistant(server, progressCallback, updateType);
 
     const details = { updateOutput: '', upgradeOutput: '', autoremoveOutput: '', packagesUpgraded: [], errors: [] };
 
@@ -238,6 +423,7 @@ async function updateServer(server, progressCallback = null, updateType = 'manua
 }
 
 async function rebootServer(server) {
+    if (server.os_type === 'home_assistant') return rebootServerHomeAssistant(server);
     try {
         const ssh = await connectToServer(server);
         const sudoExec = makeSudoExec(ssh, server.sudo_password_hash);

@@ -7,7 +7,7 @@ A web-based tool for managing Ubuntu/Debian and TrueNAS CE (SCALE) server update
 ### Server Management
 - **Manual Updates**: Trigger updates on-demand for individual servers or entire groups
 - **Scheduled Updates**: Configure automatic update intervals per group (hours, days, weeks, months)
-- **Multi-OS Support**: Debian/Ubuntu (`apt-get`) and TrueNAS CE / SCALE (REST API) — select per server
+- **Multi-OS Support**: Debian/Ubuntu (`apt-get`), TrueNAS CE / SCALE (REST API), and Home Assistant OS (Supervisor REST API) — select per server
 - **SSH Authentication**: Password or SSH key, either stored directly or via the credential vault
 - **Sudo Support**: Configurable sudo password for systems requiring elevated permissions
 - **Reboot Management**: Automatic reboot detection; optional auto-reboot per group after updates
@@ -24,6 +24,17 @@ A web-based tool for managing Ubuntu/Debian and TrueNAS CE (SCALE) server update
 - **Protocol**: choose HTTP or HTTPS per server (default: HTTPS port 443)
 - **SSL verification**: optional — disable for self-signed certificates (default); enable when a valid cert is installed
 
+### Home Assistant OS Updates
+- Select **Home Assistant OS** as the OS Type when adding a server
+- Updates are applied via the HA Supervisor REST API — no SSH required
+- Checks and updates both **Home Assistant Core** and **Home Assistant OS** in one pass
+- Core update restarts the HA container; OS update writes to the inactive boot slot and reboots
+- After an OS update the server card shows a reboot-required warning; use the Reboot button
+- Auth: long-lived access token — generate one in HA under **Profile → Security → Long-Lived Access Tokens**
+- **Protocol**: HTTP or HTTPS per server (default: HTTP port 8123)
+- **SSL verification**: optional — disable for self-signed certificates (default)
+- The authentication dropdown is hidden for HA servers (always bearer token); the token can be stored in the credential vault as an **API Token** credential
+
 ### Docker Management
 - **Docker Compose Updates**: Pull latest images and recreate containers automatically
 - **Project Discovery**: Scan a Docker host for `docker-compose.yml` files and register them in one step
@@ -33,8 +44,9 @@ A web-based tool for managing Ubuntu/Debian and TrueNAS CE (SCALE) server update
 - **NetBox Import**: Bulk-import Docker hosts directly from a NetBox inventory
 
 ### Credential Vault
-- **Reusable Credentials**: Store SSH credentials (username + password or SSH key) once and apply them to multiple servers and Docker hosts
-- **AES-256-GCM Encryption**: All passwords, SSH keys, and sudo passwords are encrypted at rest
+- **Reusable Credentials**: Store SSH credentials (username + password or SSH key) or API tokens once and apply them to multiple servers and Docker hosts
+- **API Token type**: Save long-lived access tokens (e.g., for Home Assistant) as reusable credentials; the credential picker on HA server forms automatically filters to show only API Token credentials
+- **AES-256-GCM Encryption**: All passwords, SSH keys, sudo passwords, and API tokens are encrypted at rest
 - **Centralised Management**: Update a credential in one place; every server using it picks up the change automatically
 
 ### Scheduling & Progress
@@ -91,13 +103,14 @@ Set in `docker-compose.yml`:
 
 ### Credential Vault
 
-The credential vault lets you define SSH credentials once and reuse them across any number of servers or Docker hosts.
+The credential vault lets you define credentials once and reuse them across any number of servers or Docker hosts.
 
 1. Go to the **Credentials** tab and click **+ Add Credential**
-2. Give it a name, enter the username, and choose password or SSH key
-3. When adding or editing a server/Docker host, select the credential from the dropdown instead of entering auth details manually
+2. Choose the type: **Password**, **SSH Key**, or **API Token**
+3. Give it a name; for Password/SSH Key enter a username; for API Token paste the token value
+4. When adding or editing a server/Docker host, select the credential from the dropdown instead of entering auth details manually
 
-Stored credentials are encrypted with AES-256-GCM. Updating a credential automatically applies to all servers/hosts that reference it.
+For **Home Assistant** servers the credential picker automatically filters to show only **API Token** credentials. Stored credentials are encrypted with AES-256-GCM. Updating a credential automatically applies to all servers/hosts that reference it.
 
 ### Authentication (direct, without vault)
 

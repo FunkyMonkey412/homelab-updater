@@ -127,18 +127,72 @@ function toggleEditAuthFields()       { toggleAuthFields('edit'); }
 function toggleEditDockerAuthFields() { toggleAuthFields('edit-docker'); }
 
 function togglePortField(prefix) {
-    const osType = document.getElementById(prefix === 'edit' ? 'edit-server-os-type' : 'server-os-type')?.value;
+    const osType    = document.getElementById(prefix === 'edit' ? 'edit-server-os-type' : 'server-os-type')?.value;
+    const isHA      = osType === 'home_assistant';
     const isTrueNAS = osType === 'truenas_ce';
+
     const portField = document.getElementById(prefix === 'edit' ? 'edit-server-port-field' : 'add-server-port-field');
-    if (portField) portField.classList.toggle('hidden', isTrueNAS);
+    if (portField) {
+        portField.classList.toggle('hidden', isTrueNAS);
+        const portInput = portField.querySelector('input');
+        if (portInput) {
+            if (isHA      && (portInput.value === '22' || portInput.value === '')) portInput.value = '8123';
+            if (!isHA && !isTrueNAS && portInput.value === '8123') portInput.value = '22';
+        }
+    }
+
     const tnOptions = document.getElementById(prefix === 'edit' ? 'edit-server-truenas-options' : 'add-server-truenas-options');
     if (tnOptions) tnOptions.classList.toggle('hidden', !isTrueNAS);
-    toggleTrueNASSSLField(prefix);
+
+    const haOptions = document.getElementById(prefix === 'edit' ? 'edit-server-ha-options' : 'add-server-ha-options');
+    if (haOptions) haOptions.classList.toggle('hidden', !isHA);
+
+    const usernameField = document.getElementById(prefix === 'edit' ? 'edit-server-username-field' : 'add-server-username-field');
+    if (usernameField) {
+        usernameField.classList.toggle('hidden', isHA);
+        const inp = usernameField.querySelector('input');
+        if (inp) inp.required = !isHA;
+    }
+
+    const pwdLabel = document.getElementById(prefix === 'edit' ? 'edit-server-password-label' : 'add-server-password-label');
+    if (pwdLabel) pwdLabel.textContent = isHA ? 'API Token' : 'Password';
+
+    const authTypeField = document.getElementById(prefix === 'edit' ? 'edit-server-auth-type-field' : 'add-server-auth-type-field');
+    if (authTypeField) authTypeField.classList.toggle('hidden', isHA);
+
+    const tokenHint = document.getElementById(prefix === 'edit' ? 'edit-server-api-token-hint' : 'add-server-api-token-hint');
+    if (tokenHint) tokenHint.classList.toggle('hidden', !isHA);
+
+    filterCredentialPickerForHA(prefix, isHA);
+
+    if (isTrueNAS) toggleTrueNASSSLField(prefix);
+    if (isHA)      toggleHASSLField(prefix);
+}
+
+function filterCredentialPickerForHA(prefix, isHA) {
+    const sel = document.getElementById(prefix === 'edit' ? 'edit-server-credential' : 'server-credential');
+    if (!sel) return;
+    const currentVal = sel.value;
+    sel.innerHTML = '<option value="">— Enter credentials manually —</option>' +
+        credentials
+            .filter(c => !isHA || c.credential_subtype === 'api_token')
+            .map(c => {
+                const icon  = c.auth_type === 'ssh_key' ? '🔑' : c.credential_subtype === 'api_token' ? '🔑' : '🔐';
+                const label = c.credential_subtype === 'api_token' ? 'API Token' : escapeHtml(c.username);
+                return `<option value="${c.id}">${icon} ${escapeHtml(c.name)} (${label})</option>`;
+            }).join('');
+    if (currentVal) sel.value = currentVal;
 }
 
 function toggleTrueNASSSLField(prefix) {
     const proto = document.getElementById(prefix === 'edit' ? 'edit-server-truenas-protocol' : 'server-truenas-protocol')?.value;
     const sslField = document.getElementById(prefix === 'edit' ? 'edit-server-truenas-ssl-verify' : 'add-server-truenas-ssl-verify');
+    if (sslField) sslField.classList.toggle('hidden', proto !== 'https');
+}
+
+function toggleHASSLField(prefix) {
+    const proto    = document.getElementById(prefix === 'edit' ? 'edit-server-ha-protocol' : 'server-ha-protocol')?.value;
+    const sslField = document.getElementById(prefix === 'edit' ? 'edit-server-ha-ssl-verify' : 'add-server-ha-ssl-verify');
     if (sslField) sslField.classList.toggle('hidden', proto !== 'https');
 }
 
@@ -257,7 +311,7 @@ function displayServers() {
             <div class="flex justify-between items-start mb-4">
                 <div class="flex items-center gap-2 min-w-0">
                     <h3 class="text-lg font-semibold text-white truncate">${escapeHtml(s.name)}</h3>
-                    ${s.os_type === 'truenas_ce' ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/60 text-blue-300 border border-blue-700/50 shrink-0">TrueNAS CE</span>' : ''}
+                    ${s.os_type === 'truenas_ce' ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/60 text-blue-300 border border-blue-700/50 shrink-0">TrueNAS CE</span>' : s.os_type === 'home_assistant' ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-900/60 text-orange-300 border border-orange-700/50 shrink-0">Home Assistant</span>' : ''}
                 </div>
                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(s.status)} text-white shrink-0 ml-2">
                     ${escapeHtml(s.status || 'unknown')}
@@ -340,6 +394,8 @@ function editServer(serverId) {
     document.getElementById('edit-server-os-type').value = server.os_type || 'debian';
     document.getElementById('edit-server-truenas-protocol').value = server.truenas_protocol || 'https';
     document.getElementById('edit-server-truenas-verify-ssl').checked = !!server.truenas_verify_ssl;
+    document.getElementById('edit-server-ha-protocol').value = server.ha_protocol || 'http';
+    document.getElementById('edit-server-ha-verify-ssl').checked = !!server.ha_verify_ssl;
     togglePortField('edit');
     document.getElementById('edit-server-username').value = server.username;
     document.getElementById('edit-auth-type').value = server.auth_type;
@@ -1222,15 +1278,17 @@ function displayCredentials() {
         return;
     }
     el.innerHTML = credentials.map(c => {
-        const authIcon = c.auth_type === 'ssh_key' ? '🔑' : '🔐';
-        const authLabel = c.auth_type === 'ssh_key' ? 'SSH Key' : 'Password';
+        const isApiToken = c.credential_subtype === 'api_token';
+        const authIcon  = c.auth_type === 'ssh_key' ? '🔑' : isApiToken ? '🔑' : '🔐';
+        const authLabel = c.auth_type === 'ssh_key' ? 'SSH Key' : isApiToken ? 'API Token' : 'Password';
+        const displayUser = isApiToken ? 'API Token' : escapeHtml(c.username);
         const ts = parseDbDate(c.created_at).toLocaleDateString('nl-NL', { timeZone: 'Europe/Amsterdam' });
         return `
         <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl p-5 hover:border-slate-600 transition-all duration-200">
             <div class="flex items-start justify-between mb-3">
                 <div>
                     <h3 class="text-base font-semibold text-white">${escapeHtml(c.name)}</h3>
-                    <p class="text-sm text-slate-400 mt-0.5">${escapeHtml(c.username)}</p>
+                    <p class="text-sm text-slate-400 mt-0.5">${displayUser}</p>
                 </div>
                 <span class="text-lg" title="${authLabel}">${authIcon}</span>
             </div>
@@ -1251,8 +1309,9 @@ function populateCredentialPickers() {
         const currentVal = sel.value;
         sel.innerHTML = '<option value="">— Enter credentials manually —</option>' +
             credentials.map(c => {
-                const label = c.auth_type === 'ssh_key' ? '🔑' : '🔐';
-                return `<option value="${c.id}">${label} ${escapeHtml(c.name)} (${escapeHtml(c.username)})</option>`;
+                const icon  = c.auth_type === 'ssh_key' ? '🔑' : c.credential_subtype === 'api_token' ? '🔑' : '🔐';
+                const label = c.credential_subtype === 'api_token' ? 'API Token' : escapeHtml(c.username);
+                return `<option value="${c.id}">${icon} ${escapeHtml(c.name)} (${label})</option>`;
             }).join('');
         if (currentVal) sel.value = currentVal;
     });
@@ -1301,19 +1360,37 @@ function applyCredentialToForm(select, formId) {
         if (inp) inp.required = false;
     }
     if (infoEl) {
-        const authLabel = cred.auth_type === 'ssh_key' ? '🔑 SSH Key' : '🔐 Password';
-        infoEl.innerHTML = `Using saved credential "<strong>${escapeHtml(cred.name)}</strong>" — ${escapeHtml(cred.username)}, ${authLabel}`;
+        const isApiToken = cred.credential_subtype === 'api_token';
+        const authLabel = cred.auth_type === 'ssh_key' ? '🔑 SSH Key' : isApiToken ? '🔑 API Token' : '🔐 Password';
+        const userLabel = isApiToken ? 'API Token' : escapeHtml(cred.username);
+        infoEl.innerHTML = `Using saved credential "<strong>${escapeHtml(cred.name)}</strong>" — ${userLabel}, ${authLabel}`;
         infoEl.classList.remove('hidden');
     }
 }
 
 function toggleCredAuthFields() {
     const type = document.getElementById('cred-auth-type').value;
-    document.getElementById('cred-password-field').classList.toggle('hidden', type !== 'password');
+    const isApiToken = type === 'api_token';
+
+    const usernameField = document.getElementById('cred-username-field');
+    if (usernameField) {
+        usernameField.classList.toggle('hidden', isApiToken);
+        const inp = usernameField.querySelector('input');
+        if (inp) inp.required = !isApiToken;
+    }
+
+    document.getElementById('cred-password-field').classList.toggle('hidden', type !== 'password' && !isApiToken);
     document.getElementById('cred-ssh-key-field').classList.toggle('hidden', type !== 'ssh_key');
+
+    const pwdLabel = document.getElementById('cred-password-label');
+    if (pwdLabel) pwdLabel.textContent = isApiToken ? 'API Token' : 'Password';
+
+    const tokenHint = document.getElementById('cred-api-token-hint');
+    if (tokenHint) tokenHint.classList.toggle('hidden', !isApiToken);
+
     const pwdInput = document.getElementById('cred-password');
     const keyInput = document.getElementById('cred-ssh-key');
-    if (pwdInput) pwdInput.required = type === 'password';
+    if (pwdInput) pwdInput.required = type === 'password' || isApiToken;
     if (keyInput) keyInput.required = type === 'ssh_key';
 }
 

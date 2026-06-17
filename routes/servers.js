@@ -51,14 +51,19 @@ router.post('/test-connection', async (req, res) => {
 });
 
 router.post('/', upload.single('ssh_key'), async (req, res) => {
-    const { name, ip_address, port, username, auth_type, password, sudo_password, group_id, credential_id, os_type, truenas_protocol, truenas_verify_ssl } = req.body;
+    const { name, ip_address, port, username, auth_type, password, sudo_password, group_id, credential_id, os_type,
+            truenas_protocol, truenas_verify_ssl,
+            ha_protocol, ha_port, ha_verify_ssl } = req.body;
     const sudo_hash = sudo_password ? encrypt(sudo_password) : null;
     const cred_id = credential_id || null;
     const osType = os_type || 'debian';
-    const tnProtocol = osType === 'truenas_ce' ? (truenas_protocol || 'https') : 'https';
-    const tnVerifySSL = osType === 'truenas_ce' ? (truenas_verify_ssl === '1' ? 1 : 0) : 0;
+    const tnProtocol  = osType === 'truenas_ce'     ? (truenas_protocol || 'https') : 'https';
+    const tnVerifySSL = osType === 'truenas_ce'     ? (truenas_verify_ssl === '1' ? 1 : 0) : 0;
+    const haProtocol  = osType === 'home_assistant' ? (ha_protocol  || 'http')  : 'http';
+    const haPort      = osType === 'home_assistant' ? (parseInt(ha_port) || 8123) : 8123;
+    const haVerifySSL = osType === 'home_assistant' ? (ha_verify_ssl === '1' ? 1 : 0) : 0;
 
-    let effective_username = username;
+    let effective_username = username || (osType === 'home_assistant' ? 'homeassistant' : username);
     let effective_auth_type = auth_type;
     let password_hash = null;
     let ssh_key_path = null;
@@ -73,18 +78,23 @@ router.post('/', upload.single('ssh_key'), async (req, res) => {
             password_hash = auth_type === 'password' ? encrypt(password) : null;
             ssh_key_path = auth_type === 'ssh_key' && req.file ? req.file.path : null;
         }
+        if (!effective_username) effective_username = 'homeassistant';
 
         const result = await dbRun(
-            `INSERT INTO servers (name, ip_address, port, username, auth_type, password_hash, ssh_key_path, sudo_password_hash, group_id, credential_id, os_type, truenas_protocol, truenas_verify_ssl)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [name, ip_address, port || 22, effective_username, effective_auth_type, password_hash, ssh_key_path, sudo_hash, group_id || null, cred_id, osType, tnProtocol, tnVerifySSL]
+            `INSERT INTO servers (name, ip_address, port, username, auth_type, password_hash, ssh_key_path, sudo_password_hash,
+              group_id, credential_id, os_type, truenas_protocol, truenas_verify_ssl, ha_protocol, ha_port, ha_verify_ssl)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [name, ip_address, port || 22, effective_username, effective_auth_type, password_hash, ssh_key_path, sudo_hash,
+             group_id || null, cred_id, osType, tnProtocol, tnVerifySSL, haProtocol, haPort, haVerifySSL]
         );
         res.json({ id: result.lastID, name, ip_address, port: port || 22, username: effective_username, auth_type: effective_auth_type, os_type: osType });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/:id', upload.single('ssh_key'), async (req, res) => {
-    const { name, ip_address, port, username, auth_type, password, sudo_password, group_id, credential_id, os_type, truenas_protocol, truenas_verify_ssl } = req.body;
+    const { name, ip_address, port, username, auth_type, password, sudo_password, group_id, credential_id, os_type,
+            truenas_protocol, truenas_verify_ssl,
+            ha_protocol, ha_port, ha_verify_ssl } = req.body;
     try {
         const current = await dbGet('SELECT * FROM servers WHERE id = ?', [req.params.id]);
         if (!current) return res.status(404).json({ error: 'Server not found' });
@@ -111,15 +121,21 @@ router.put('/:id', upload.single('ssh_key'), async (req, res) => {
             }
         }
         if (sudo_password) sudo_hash = encrypt(sudo_password);
+        if (!effective_username) effective_username = 'homeassistant';
 
-        const osType = os_type || current.os_type || 'debian';
-        const tnProtocol = osType === 'truenas_ce' ? (truenas_protocol || current.truenas_protocol || 'https') : 'https';
-        const tnVerifySSL = osType === 'truenas_ce' ? (truenas_verify_ssl === '1' ? 1 : 0) : 0;
+        const osType      = os_type || current.os_type || 'debian';
+        const tnProtocol  = osType === 'truenas_ce'     ? (truenas_protocol || current.truenas_protocol || 'https') : 'https';
+        const tnVerifySSL = osType === 'truenas_ce'     ? (truenas_verify_ssl === '1' ? 1 : 0) : 0;
+        const haProtocol  = osType === 'home_assistant' ? (ha_protocol  || current.ha_protocol  || 'http')  : 'http';
+        const haPort      = osType === 'home_assistant' ? (parseInt(ha_port) || current.ha_port || 8123) : 8123;
+        const haVerifySSL = osType === 'home_assistant' ? (ha_verify_ssl === '1' ? 1 : 0) : 0;
+
         await dbRun(
             `UPDATE servers SET name=?, ip_address=?, port=?, username=?, auth_type=?, password_hash=?,
-             ssh_key_path=?, sudo_password_hash=?, group_id=?, credential_id=?, os_type=?, truenas_protocol=?, truenas_verify_ssl=? WHERE id=?`,
+             ssh_key_path=?, sudo_password_hash=?, group_id=?, credential_id=?, os_type=?,
+             truenas_protocol=?, truenas_verify_ssl=?, ha_protocol=?, ha_port=?, ha_verify_ssl=? WHERE id=?`,
             [name, ip_address, port || 22, effective_username, effective_auth_type, password_hash, ssh_key_path, sudo_hash,
-             group_id || null, cred_id, osType, tnProtocol, tnVerifySSL, req.params.id]
+             group_id || null, cred_id, osType, tnProtocol, tnVerifySSL, haProtocol, haPort, haVerifySSL, req.params.id]
         );
         res.json({ id: req.params.id, name, ip_address, port: port || 22, username: effective_username, auth_type: effective_auth_type, os_type: osType });
     } catch (err) { res.status(500).json({ error: err.message }); }

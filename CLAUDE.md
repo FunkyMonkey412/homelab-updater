@@ -40,7 +40,7 @@ public/script.js     ~2100 lines of vanilla JS; tab system, forms, SSE listeners
 - `docker_hosts` — SSH-accessible Docker hosts
 - `docker_compose_projects` — compose files per host
 - `docker_groups` — groups of Docker hosts with schedule
-- `credentials` — reusable encrypted SSH credential vault
+- `credentials` — reusable encrypted credential vault (password, SSH key, or API token); `credential_subtype` column distinguishes API tokens from passwords
 - `webhooks` — Discord webhook destinations
 - `update_logs` — full audit trail of all updates
 - `plugin_settings` — key-value store (currently: NetBox URL + encrypted token)
@@ -74,7 +74,7 @@ public/script.js     ~2100 lines of vanilla JS; tab system, forms, SSE listeners
 
 **Encryption:** `utils/crypto.js` — `encrypt(plaintext)` returns `'aes:' + base64(iv+tag+ciphertext)`. Passwords, sudo passwords, SSH key material, and the NetBox token are all encrypted before DB storage. Key lives at `data/encryption.key` or `ENCRYPTION_KEY` env var.
 
-**Migrations:** Add objects to the `MIGRATIONS` array in `db/index.js` with a unique `id`, `name`, and `sql`. The runner splits on `;` and silently ignores `duplicate column` / `already exists` errors for idempotency. Current highest migration id: **7** (`add_truenas_connection_settings`).
+**Migrations:** Add objects to the `MIGRATIONS` array in `db/index.js` with a unique `id`, `name`, and `sql`. The runner splits on `;` and silently ignores `duplicate column` / `already exists` errors for idempotency. Current highest migration id: **9** (`add_credential_subtype`).
 
 **Error responses:** Always `{ error: string }` with a meaningful HTTP status. 502 for upstream failures (SSH unreachable, NetBox timeout).
 
@@ -116,7 +116,7 @@ Environment variables in `docker-compose.yml`:
 - Server groups with flexible auto-update schedules (hours/days/weeks/months) + auto-reboot
 - Docker host CRUD + project discovery + manual update per project/host/group
 - Docker groups with auto-update schedules
-- Reusable credential vault (password or SSH key, AES-256-GCM encrypted)
+- Reusable credential vault (password, SSH key, or API token, AES-256-GCM encrypted)
 - Update logs with full output capture, pagination, filtering
 - Discord webhook notifications (success/failure, per webhook)
 - NetBox VM import for servers and Docker hosts (bulk, dedup by IP)
@@ -129,7 +129,7 @@ Environment variables in `docker-compose.yml`:
 
 ## Current status
 
-### Done (as of 2026-06-17)
+### Done (as of 2026-06-18)
 
 - Full server and Docker management stack
 - Credential vault with AES-256-GCM encryption
@@ -139,6 +139,9 @@ Environment variables in `docker-compose.yml`:
 - **Plugins → NetBox settings page** — users can configure NetBox URL and API token in the UI (stored encrypted in `plugin_settings` table); no container restart needed. Test Connection works with unsaved form values too.
 - **TrueNAS CE (SCALE) update support** — `os_type` field on servers; REST API-based update flow (`/update/status` → `/update/download` → `/update/run`); live SSE progress with download %; reboot-required flag set after apply.
 - **TrueNAS CE per-server connection settings** — protocol (HTTP/HTTPS) and SSL verification (checkbox) stored in `truenas_protocol` + `truenas_verify_ssl` columns (migration #7); fields appear only when TrueNAS CE OS type is selected; SSL verify field hides when HTTP is chosen.
+- **Home Assistant OS update support** — `os_type='home_assistant'`; uses HA Supervisor REST API; checks and updates both Core and OS in one pass; connection drop handled for Core restart and OS reboot; Reboot button triggers `/api/supervisor/host/reboot`. Per-server settings: `ha_protocol`, `ha_port` (default 8123), `ha_verify_ssl` (migration #8). Token stored encrypted in `password_hash` field. No SSH required.
+- **API Token credential type** — credential vault extended with `api_token` subtype (migration #9 adds `credential_subtype TEXT` column); stored as `auth_type='password'` + `credential_subtype='api_token'` to satisfy the existing CHECK constraint; displayed as "API Token" badge in the UI; credential picker on HA server forms filters to API Token credentials only.
+- **HA server form UX** — authentication type dropdown is hidden for Home Assistant OS (always bearer token); password field is relabelled "API Token"; hint text directs users to Profile → Security → Long-Lived Access Tokens; credential form field order: Credential Name → Authentication Type → Username → Password/Key.
 
 ### TrueNAS CE notes
 
@@ -147,7 +150,19 @@ Environment variables in `docker-compose.yml`:
 - `update.download` stages the image; `update.run` applies it; system reboots automatically
 - After `update.run` completes the server card shows "⚠ Reboot recommended" — use the Reboot button to finalise
 - Tested against TrueNAS SCALE 25.10.x (Goldeye train)
-- Highest migration id: **7** (`add_truenas_connection_settings`)
+
+### Home Assistant OS notes
+
+- Update uses HA Supervisor REST API at `http(s)://{ip}:{port}/api/supervisor/`
+- Auth: long-lived access token (generate in HA profile → Security → Long-Lived Access Tokens), stored encrypted in `password_hash`
+- Default: HTTP, port 8123, SSL verification off
+- Update flow: checks Core (`/api/supervisor/core`) → updates if available → checks OS (`/api/supervisor/os`) → updates if available
+- Core update restarts the HA container (no system reboot); OS update writes to inactive boot slot then reboots
+- Reboot button uses `/api/supervisor/host/reboot`
+- **No SSH credentials needed** — username field is hidden in the form (placeholder 'homeassistant' stored in DB)
+- Auth type dropdown is hidden in server forms for HA — it always uses bearer token
+- Credential picker on HA server forms shows only API Token credentials
+- Highest migration id: **9** (`add_credential_subtype`)
 
 ### In progress / next
 
