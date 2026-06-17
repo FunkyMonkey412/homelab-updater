@@ -1,5 +1,6 @@
-const { dbRun } = require('../db');
+const { dbRun, dbGet } = require('../db');
 const { connectToServer, makeSudoExec } = require('./ssh');
+const { decrypt } = require('../utils/crypto');
 const { notifyUpdate } = require('./notifications');
 
 async function logUpdate(entity_type, entity_id, entity_name, update_type, success, message, details = null) {
@@ -14,7 +15,117 @@ async function logUpdate(entity_type, entity_id, entity_name, update_type, succe
     }
 }
 
+async function updateServerTrueNAS(server, progressCallback = null, updateType = 'manual') {
+    const emit = (stage, message) => progressCallback?.({ stage, message });
+
+    // Resolve password for HTTP Basic auth
+    let username, password;
+    if (server.credential_id) {
+        const cred = await dbGet('SELECT * FROM credentials WHERE id = ?', [server.credential_id]);
+        if (!cred) throw new Error('Saved credential not found');
+        username = cred.username;
+        password = cred.password_hash ? decrypt(cred.password_hash) : null;
+    } else {
+        username = server.username;
+        password = server.password_hash ? decrypt(server.password_hash) : null;
+    }
+    if (!password) throw new Error('A password is required for TrueNAS CE updates');
+
+    const baseUrl = `http://${server.ip_address}/api/v2.0`;
+    const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+
+    const apiGet = async (path) => {
+        const res = await fetch(`${baseUrl}${path}`, { headers: { Authorization: authHeader } });
+        if (!res.ok) throw new Error(`TrueNAS API ${res.status}: ${await res.text()}`);
+        return res.json();
+    };
+    const apiPost = async (path, body = {}) => {
+        const res = await fetch(`${baseUrl}${path}`, {
+            method: 'POST',
+            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`TrueNAS API ${res.status}: ${await res.text()}`);
+        return res.json();
+    };
+    const pollJob = async (jobId, onProgress) => {
+        while (true) {
+            await new Promise(r => setTimeout(r, 5000));
+            let jobs;
+            try { jobs = await apiGet(`/core/get_jobs?id=${jobId}`); } catch { return; }
+            const job = jobs?.[0];
+            if (!job) return;
+            if (job.state === 'SUCCESS') return job;
+            if (job.state === 'FAILED' || job.state === 'ABORTED')
+                throw new Error(job.error || `Update job ${job.state.toLowerCase()}`);
+            onProgress?.(job.progress?.percent ?? 0, job.progress?.description || job.state);
+        }
+    };
+
+    try {
+        emit('connecting', `Connecting to ${server.name}...`);
+
+        // Check what's available
+        emit('checking', 'Checking for available updates...');
+        const status = await apiGet('/update/status');
+
+        if (!status.status?.new_version) {
+            await dbRun('UPDATE servers SET status=?, last_update=? WHERE id=?',
+                ['updated', new Date().toISOString(), server.id]);
+            const message = 'No updates available';
+            emit('completed', message);
+            await logUpdate('server', server.id, server.name, updateType, true, message, JSON.stringify({ available: false }));
+            notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: true, message });
+            return { success: true, message, needsReboot: false };
+        }
+
+        const newVersion = status.status.new_version.version;
+        const downloadPct = status.update_download_progress?.percent ?? 0;
+
+        // Download if not already complete
+        if (downloadPct < 100) {
+            emit('updating', `Downloading update ${newVersion}...`);
+            const downloadJobId = await apiPost('/update/download');
+            await pollJob(downloadJobId, (pct, desc) =>
+                emit('updating', `Downloading ${newVersion}: ${Math.round(pct)}% — ${desc}`)
+            );
+        } else {
+            emit('updating', `Update ${newVersion} already downloaded — applying...`);
+        }
+
+        // Apply — triggers reboot, connection will drop
+        emit('updating', `Applying update ${newVersion} — system will reboot...`);
+        try {
+            const runJobId = await apiPost('/update/run', {});
+            await pollJob(runJobId, (pct, desc) =>
+                emit('updating', `Installing: ${Math.round(pct)}% — ${desc}`)
+            );
+        } catch {
+            // Connection drops when TrueNAS reboots — expected
+        }
+
+        await dbRun('UPDATE servers SET status=?, last_update=?, needs_reboot=? WHERE id=?',
+            ['updated', new Date().toISOString(), 1, server.id]);
+
+        const message = `TrueNAS CE updated to ${newVersion} — reboot required to activate`;
+        emit('completed', message);
+        await logUpdate('server', server.id, server.name, updateType, true, message, JSON.stringify({ newVersion }));
+        notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: true, message });
+        return { success: true, message, needsReboot: false };
+
+    } catch (error) {
+        console.error(`[update] TrueNAS ${server.name}: ${error.message}`);
+        await dbRun('UPDATE servers SET status=? WHERE id=?', ['failed', server.id]);
+        emit('failed', `Update failed: ${error.message}`);
+        await logUpdate('server', server.id, server.name, updateType, false, error.message, JSON.stringify({ error: error.message }));
+        notifyUpdate({ entity_type: 'server', entity_name: server.name, update_type: updateType, success: false, message: error.message });
+        return { success: false, message: error.message };
+    }
+}
+
 async function updateServer(server, progressCallback = null, updateType = 'manual') {
+    if (server.os_type === 'truenas_ce') return updateServerTrueNAS(server, progressCallback, updateType);
+
     const details = { updateOutput: '', upgradeOutput: '', autoremoveOutput: '', packagesUpgraded: [], errors: [] };
 
     const emit = (stage, message) => progressCallback?.({ stage, message });

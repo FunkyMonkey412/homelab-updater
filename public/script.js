@@ -239,8 +239,11 @@ function displayServers() {
     el.innerHTML = servers.map(s => `
         <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl p-5 hover:border-slate-600 transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/10">
             <div class="flex justify-between items-start mb-4">
-                <h3 class="text-lg font-semibold text-white">${escapeHtml(s.name)}</h3>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(s.status)} text-white">
+                <div class="flex items-center gap-2 min-w-0">
+                    <h3 class="text-lg font-semibold text-white truncate">${escapeHtml(s.name)}</h3>
+                    ${s.os_type === 'truenas_ce' ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/60 text-blue-300 border border-blue-700/50 shrink-0">TrueNAS CE</span>' : ''}
+                </div>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(s.status)} text-white shrink-0 ml-2">
                     ${escapeHtml(s.status || 'unknown')}
                 </span>
             </div>
@@ -318,6 +321,7 @@ function editServer(serverId) {
     document.getElementById('edit-server-name').value = server.name;
     document.getElementById('edit-server-ip').value = server.ip_address;
     document.getElementById('edit-server-port').value = server.port;
+    document.getElementById('edit-server-os-type').value = server.os_type || 'debian';
     document.getElementById('edit-server-username').value = server.username;
     document.getElementById('edit-auth-type').value = server.auth_type;
     loadGroupsForEditSelect();
@@ -592,11 +596,11 @@ function hideUpdateProgress() {
 function updateProgressDisplay(progress, type = 'server') {
     const stages = type === 'docker'
         ? { initializing: '🔄 Initializing...', connecting: '🔌 Connecting...', pulling: '⬇️ Pulling images...', recreating: '🔄 Recreating containers...', completed: '✅ Done!', failed: '❌ Failed' }
-        : { initializing: '🔄 Initializing...', connecting: '🔌 Connecting...', updating: '📋 Updating package list...', upgrading: '⬆️ Upgrading packages...', autoremove: '🧹 Removing old packages...', completed: '✅ Done!', failed: '❌ Failed' };
+        : { initializing: '🔄 Initializing...', connecting: '🔌 Connecting...', checking: '🔍 Checking for updates...', updating: '⬆️ Downloading / installing...', upgrading: '⬆️ Upgrading packages...', autoremove: '🧹 Removing old packages...', completed: '✅ Done!', failed: '❌ Failed' };
 
     const pcts = type === 'docker'
         ? { initializing: 10, connecting: 20, pulling: 50, recreating: 80, completed: 100, failed: 100 }
-        : { initializing: 10, connecting: 20, updating: 35, upgrading: 65, autoremove: 85, completed: 100, failed: 100 };
+        : { initializing: 10, connecting: 20, checking: 30, updating: 60, upgrading: 65, autoremove: 85, completed: 100, failed: 100 };
 
     const stageEl = document.getElementById('progress-stage');
     const msgEl = document.getElementById('progress-message');
@@ -613,7 +617,7 @@ function updateProgressDisplay(progress, type = 'server') {
             'bg-gradient-to-r from-blue-600 to-cyan-600'
         );
     }
-    if (logsEl && progress.message && ['upgrading', 'pulling', 'recreating', 'autoremove'].includes(progress.stage)) {
+    if (logsEl && progress.message && ['upgrading', 'updating', 'pulling', 'recreating', 'autoremove'].includes(progress.stage)) {
         const entry = document.createElement('div');
         entry.className = 'mb-1';
         entry.textContent = `${new Date().toLocaleTimeString()}: ${progress.message}`;

@@ -1,18 +1,26 @@
 # Server Update Manager
 
-A web-based tool for managing Ubuntu/Debian server updates and Docker Compose projects with automatic scheduling, a credential vault, and NetBox integration.
+A web-based tool for managing Ubuntu/Debian and TrueNAS CE (SCALE) server updates and Docker Compose projects with automatic scheduling, a credential vault, and NetBox integration.
 
 ## Features
 
 ### Server Management
 - **Manual Updates**: Trigger updates on-demand for individual servers or entire groups
 - **Scheduled Updates**: Configure automatic update intervals per group (hours, days, weeks, months)
+- **Multi-OS Support**: Debian/Ubuntu (`apt-get`) and TrueNAS CE / SCALE (REST API) — select per server
 - **SSH Authentication**: Password or SSH key, either stored directly or via the credential vault
 - **Sudo Support**: Configurable sudo password for systems requiring elevated permissions
 - **Reboot Management**: Automatic reboot detection; optional auto-reboot per group after updates
 - **Update Logging**: Detailed logs showing exactly which packages were upgraded
 - **Connection Testing**: Verify SSH connectivity before adding a server
 - **NetBox Import**: Bulk-import servers directly from a NetBox inventory
+
+### TrueNAS CE (SCALE) Updates
+- Select **TrueNAS CE (SCALE)** as the OS Type when adding a server
+- Updates are applied via the TrueNAS REST API — no SSH commands or `midclt` required
+- Live progress during download and installation is shown in the same progress modal
+- After the update is applied the server card shows a reboot-required warning; use the Reboot button to activate the new version
+- Requires password authentication (HTTP Basic auth to the TrueNAS API on port 80)
 
 ### Docker Management
 - **Docker Compose Updates**: Pull latest images and recreate containers automatically

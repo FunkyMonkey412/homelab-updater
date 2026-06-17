@@ -162,6 +162,11 @@ const MIGRATIONS = [
             ALTER TABLE docker_hosts ADD COLUMN sudo_password_hash TEXT;
             ALTER TABLE update_logs ADD COLUMN details TEXT;
         `
+    },
+    {
+        id: 6,
+        name: 'add_os_type_to_servers',
+        sql: `ALTER TABLE servers ADD COLUMN os_type TEXT NOT NULL DEFAULT 'debian'`
     }
 ];
 

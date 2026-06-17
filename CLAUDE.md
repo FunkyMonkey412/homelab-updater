@@ -2,7 +2,7 @@
 
 ## What this project is
 
-A self-hosted web UI for managing Ubuntu/Debian server updates and Docker Compose project updates at scale. Operators can manually trigger or schedule `apt-get` upgrades and `docker compose pull/up` runs across fleets of servers, with real-time progress, update logs, Discord notifications, and NetBox import.
+A self-hosted web UI for managing Ubuntu/Debian server updates, TrueNAS CE (SCALE) updates, and Docker Compose project updates at scale. Operators can manually trigger or schedule `apt-get` upgrades, TrueNAS system updates, and `docker compose pull/up` runs across fleets of servers, with real-time progress, update logs, Discord notifications, and NetBox import.
 
 Designed for internal use on a trusted network — no user auth, no HTTPS (add a reverse proxy for that).
 
@@ -35,7 +35,7 @@ public/script.js     ~2100 lines of vanilla JS; tab system, forms, SSE listeners
 
 ### Database tables (SQLite at `data/servers.db`)
 
-- `servers` — individual SSH-managed servers
+- `servers` — individual SSH-managed servers (Debian/Ubuntu or TrueNAS CE, via `os_type` column)
 - `server_groups` — groups with auto-update schedule
 - `docker_hosts` — SSH-accessible Docker hosts
 - `docker_compose_projects` — compose files per host
@@ -74,7 +74,7 @@ public/script.js     ~2100 lines of vanilla JS; tab system, forms, SSE listeners
 
 **Encryption:** `utils/crypto.js` — `encrypt(plaintext)` returns `'aes:' + base64(iv+tag+ciphertext)`. Passwords, sudo passwords, SSH key material, and the NetBox token are all encrypted before DB storage. Key lives at `data/encryption.key` or `ENCRYPTION_KEY` env var.
 
-**Migrations:** Add objects to the `MIGRATIONS` array in `db/index.js` with a unique `id`, `name`, and `sql`. The runner splits on `;` and silently ignores `duplicate column` / `already exists` errors for idempotency.
+**Migrations:** Add objects to the `MIGRATIONS` array in `db/index.js` with a unique `id`, `name`, and `sql`. The runner splits on `;` and silently ignores `duplicate column` / `already exists` errors for idempotency. Current highest migration id: **6** (`add_os_type_to_servers`).
 
 **Error responses:** Always `{ error: string }` with a meaningful HTTP status. 502 for upstream failures (SSH unreachable, NetBox timeout).
 
@@ -111,6 +111,8 @@ Environment variables in `docker-compose.yml`:
 ## Features (complete)
 
 - Server CRUD + SSH test + manual update + reboot + status tracking
+- **OS type per server** (`os_type` column: `debian` or `truenas_ce`) — selectable in Add/Edit server forms; shown as badge on server cards
+- **TrueNAS CE (SCALE) update support** — uses TrueNAS REST API (`/api/v2.0/update/*`), not SSH/midclt; download + apply flow with live progress; sets reboot-required flag after apply
 - Server groups with flexible auto-update schedules (hours/days/weeks/months) + auto-reboot
 - Docker host CRUD + project discovery + manual update per project/host/group
 - Docker groups with auto-update schedules
@@ -127,7 +129,7 @@ Environment variables in `docker-compose.yml`:
 
 ## Current status
 
-### Done (as of 2026-06-13)
+### Done (as of 2026-06-17)
 
 - Full server and Docker management stack
 - Credential vault with AES-256-GCM encryption
@@ -135,6 +137,14 @@ Environment variables in `docker-compose.yml`:
 - Discord webhooks
 - NetBox import (servers + Docker hosts)
 - **Plugins → NetBox settings page** — users can configure NetBox URL and API token in the UI (stored encrypted in `plugin_settings` table); no container restart needed. Test Connection works with unsaved form values too.
+- **TrueNAS CE (SCALE) update support** — `os_type` field on servers; REST API-based update flow (`/update/status` → `/update/download` → `/update/run`); live SSE progress with download %; reboot-required flag set after apply.
+
+### TrueNAS CE notes
+
+- Update uses the TrueNAS REST API on port 80 — **password auth required** (SSH key auth is not used for the update flow)
+- `update.download` stages the image; `update.run` applies it and triggers a reboot
+- After `update.run` completes the server card shows "⚠ Reboot recommended" — use the Reboot button to finalise
+- Tested against TrueNAS SCALE 25.10.x (Goldeye train)
 
 ### In progress / next
 

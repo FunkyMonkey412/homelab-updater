@@ -238,6 +238,14 @@
                     </div>
 
                     <div>
+                        <label for="server-os-type" class="block text-sm font-medium text-slate-300 mb-2">OS Type</label>
+                        <select id="server-os-type" name="os_type" class="block w-full px-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                            <option value="debian">Debian / Ubuntu</option>
+                            <option value="truenas_ce">TrueNAS CE (SCALE)</option>
+                        </select>
+                    </div>
+
+                    <div>
                         <label for="server-credential" class="block text-sm font-medium text-slate-300 mb-2">Saved Credential <span class="text-slate-500 font-normal">(optional)</span></label>
                         <select id="server-credential" name="credential_id" onchange="applyCredentialToForm(this,'add-server')" class="block w-full px-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
                             <option value="">— Enter credentials manually —</option>
@@ -891,6 +899,14 @@
                 <div>
                     <label for="edit-server-port" class="block text-sm font-medium text-slate-300 mb-2">Port</label>
                     <input type="number" id="edit-server-port" name="port" value="22" class="block w-full px-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                </div>
+
+                <div>
+                    <label for="edit-server-os-type" class="block text-sm font-medium text-slate-300 mb-2">OS Type</label>
+                    <select id="edit-server-os-type" name="os_type" class="block w-full px-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                        <option value="debian">Debian / Ubuntu</option>
+                        <option value="truenas_ce">TrueNAS CE (SCALE)</option>
+                    </select>
                 </div>
 
                 <div>
