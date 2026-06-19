@@ -1,149 +1,53 @@
-# Server Update Manager
+# homelab-updater
 
-A web-based tool for managing Ubuntu/Debian and TrueNAS CE (SCALE) server updates and Docker Compose projects with automatic scheduling, a credential vault, and NetBox integration.
+Tired of SSH-ing into every box in your homelab just to run `apt upgrade`? homelab-updater is a self-hosted web UI that lets you patch all your servers, TrueNAS boxes, and Home Assistant installs from one place — with scheduling, live progress, and Discord notifications.
 
-## Features
+No cloud, no account, no nonsense. Runs in Docker on whatever server you've already got.
 
-### Server Management
-- **Manual Updates**: Trigger updates on-demand for individual servers or entire groups
-- **Scheduled Updates**: Configure automatic update intervals per group (hours, days, weeks, months)
-- **Multi-OS Support**: Debian/Ubuntu (`apt-get`), TrueNAS CE / SCALE (REST API), and Home Assistant OS (Supervisor REST API) — select per server
-- **SSH Authentication**: Password or SSH key, either stored directly or via the credential vault
-- **Sudo Support**: Configurable sudo password for systems requiring elevated permissions
-- **Reboot Management**: Automatic reboot detection; optional auto-reboot per group after updates
-- **Update Logging**: Detailed logs showing exactly which packages were upgraded
-- **Connection Testing**: Verify SSH connectivity before adding a server
-- **NetBox Import**: Bulk-import servers directly from a NetBox inventory
+## What it does
 
-### TrueNAS CE (SCALE) Updates
-- Select **TrueNAS CE (SCALE)** as the OS Type when adding a server
-- Updates are applied via the TrueNAS REST API — no SSH commands or `midclt` required
-- Live progress during download and installation is shown in the same progress modal
-- After the update is applied the server card shows a reboot-required warning; use the Reboot button to activate the new version
-- Requires password authentication (HTTP Basic auth to the TrueNAS API)
-- **Protocol**: choose HTTP or HTTPS per server (default: HTTPS port 443)
-- **SSL verification**: optional — disable for self-signed certificates (default); enable when a valid cert is installed
-
-### Home Assistant OS Updates
-- Select **Home Assistant OS** as the OS Type when adding a server
-- Updates are applied via the HA Supervisor REST API — no SSH required
-- Checks and updates both **Home Assistant Core** and **Home Assistant OS** in one pass
-- Core update restarts the HA container; OS update writes to the inactive boot slot and reboots
-- After an OS update the server card shows a reboot-required warning; use the Reboot button
-- Auth: long-lived access token — generate one in HA under **Profile → Security → Long-Lived Access Tokens**
-- **Protocol**: HTTP or HTTPS per server (default: HTTP port 8123)
-- **SSL verification**: optional — disable for self-signed certificates (default)
-- The authentication dropdown is hidden for HA servers (always bearer token); the token can be stored in the credential vault as an **API Token** credential
-
-### Docker Management
-- **Docker Compose Updates**: Pull latest images and recreate containers automatically
-- **Project Discovery**: Scan a Docker host for `docker-compose.yml` files and register them in one step
-- **Project Organisation**: Manage multiple Compose projects per host
-- **Group Scheduling**: Schedule automatic updates for all projects across a Docker group
-- **Multi-Host Support**: Manage Docker hosts across your entire infrastructure
-- **NetBox Import**: Bulk-import Docker hosts directly from a NetBox inventory
-
-### Credential Vault
-- **Reusable Credentials**: Store SSH credentials (username + password or SSH key) or API tokens once and apply them to multiple servers and Docker hosts
-- **API Token type**: Save long-lived access tokens (e.g., for Home Assistant) as reusable credentials; the credential picker on HA server forms automatically filters to show only API Token credentials
-- **AES-256-GCM Encryption**: All passwords, SSH keys, sudo passwords, and API tokens are encrypted at rest
-- **Centralised Management**: Update a credential in one place; every server using it picks up the change automatically
-
-### Scheduling & Progress
-- **Flexible Intervals**: Per-group schedules with hours/days/weeks/months intervals and a configurable start date
-- **Timezone Support**: All times displayed and evaluated in Europe/Amsterdam (configurable via `TZ`)
-- **Scheduler Check**: Runs every minute; fires a group update when its interval has elapsed
-- **Live Activity Panel**: A real-time panel (bottom-right corner) appears automatically during any scheduled update, showing the current group, host/server, project, and progress counter. Dismissible; auto-hides 10 seconds after completion
-
-### Webhooks
-- **Update Notifications**: Send POST webhooks to any URL on update completion
-- **Configurable Events**: Triggered for both server and Docker update results (success and failure)
-
-### Logging & History
-- **Complete History**: All updates (manual and automatic) are logged with timestamps in Europe/Amsterdam time
-- **Detailed Information**: Packages upgraded for server updates; images pulled and containers recreated for Docker updates; full command output for troubleshooting
-- **Filterable View**: Filter by entity type (server / docker) and update type (manual / automatic)
-- **Expandable Details**: Click "Show Details" for full command output
-- **Pagination**: Navigate through historical logs
-
-### User Interface
-- **Dark Theme**: Modern UI built with Tailwind CSS
-- **Real-time Progress**: Live SSE-based progress feedback during manual and scheduled updates
-- **Sidebar Navigation**: Tab-based layout with instant access to all sections
-- **Modal Dialogs**: Add and edit all resources via clean modal forms
-- **Group Member View**: Groups and Docker Groups tabs show which servers/hosts belong to each group
+- **Patch servers**: Debian/Ubuntu via SSH, with sudo support. One click per server or run a whole group at once.
+- **TrueNAS CE (SCALE)**: Uses the TrueNAS REST API — no SSH hacks needed.
+- **Home Assistant OS**: Updates Core and OS in one pass via the Supervisor API. Just paste a long-lived token.
+- **Docker Compose**: Pull latest images and recreate containers across all your hosts.
+- **Scheduling**: Set update groups to run automatically — nightly, weekly, whatever works for you.
+- **Credential vault**: Store SSH keys, passwords, and API tokens once, reuse them everywhere. Encrypted at rest.
+- **Live progress**: Watch updates happen in real time via a progress modal and activity panel.
+- **Discord webhooks**: Get notified when updates succeed or fail.
+- **NetBox import**: If you're already using NetBox, pull your server inventory straight in.
 
 ## Quick Start
 
-See [INSTALL.md](INSTALL.md) for full installation instructions.
+See [INSTALL.md](INSTALL.md) for the full setup guide.
 
 ```bash
-git clone https://github.com/FunkyMonkey412/update-manager.git
-cd update-manager
+git clone https://github.com/FunkyMonkey412/homelab-updater.git
+cd homelab-updater
 docker compose build
 docker compose up -d
-
-# Access at http://your-server-ip:3000
 ```
+
+Then open `http://your-server-ip:3000` in your browser.
 
 ## Configuration
 
-### Environment Variables
+Three env vars you might actually want to change (set in `docker-compose.yml`):
 
-Set in `docker-compose.yml`:
-
-| Variable | Default | Description |
+| Variable | Default | What it does |
 |---|---|---|
-| `PORT` | `3000` | HTTP port the app listens on |
-| `TZ` | `Europe/Amsterdam` | Timezone for scheduling and log display |
-| `NODE_ENV` | `production` | Node environment |
-| `ENCRYPTION_KEY` | *(auto-generated)* | 64-char hex AES-256 key. If unset, a key is generated and saved to `./data/encryption.key` |
-| `NETBOX_URL` | *(unset)* | *(Legacy)* NetBox base URL. Prefer configuring via **Plugins → NetBox** in the UI |
-| `NETBOX_TOKEN` | *(unset)* | *(Legacy)* NetBox API token. Prefer configuring via **Plugins → NetBox** in the UI |
+| `PORT` | `3000` | Port the web UI listens on |
+| `TZ` | `Europe/Amsterdam` | Timezone for scheduling and logs |
+| `ENCRYPTION_KEY` | *(auto-generated)* | Fixed 64-char hex key for credential encryption. Auto-generated and saved to `./data/encryption.key` if not set — back that file up! |
 
-### Credential Vault
+**Credential vault:** Go to the Credentials tab, add a password, SSH key, or API token, give it a name, and select it when adding servers. Change it once, it updates everywhere.
 
-The credential vault lets you define credentials once and reuse them across any number of servers or Docker hosts.
+**NetBox (optional):** Go to Plugins → NetBox in the sidebar, paste your URL and a read-only API token, and hit Save. Then use the Import button on the Servers or Docker Hosts tabs.
 
-1. Go to the **Credentials** tab and click **+ Add Credential**
-2. Choose the type: **Password**, **SSH Key**, or **API Token**
-3. Give it a name; for Password/SSH Key enter a username; for API Token paste the token value
-4. When adding or editing a server/Docker host, select the credential from the dropdown instead of entering auth details manually
+## A note on security
 
-For **Home Assistant** servers the credential picker automatically filters to show only **API Token** credentials. Stored credentials are encrypted with AES-256-GCM. Updating a credential automatically applies to all servers/hosts that reference it.
+This tool is designed for a trusted home network — there's no login screen by default. Keep port 3000 firewalled to your LAN (or throw Nginx in front of it if you want HTTPS). And make sure to back up `./data/` — it holds your database and encryption key.
 
-### Authentication (direct, without vault)
-
-**Password:** Enter username and password — stored AES-256-GCM encrypted.
-
-**SSH Key:** Upload a private key file (`.pem`, `.key`, `id_rsa`, etc.). Keys are stored in the `ssh-keys` volume. Unencrypted keys only.
-
-### Server Groups
-
-- Organise servers by environment, function, or location
-- Perform batch updates on all servers in a group
-- Per-group auto-update schedule: interval, start date/time, optional auto-reboot
-- Auto-updates only run at the group level — there is no per-server automatic update
-
-### Docker Groups
-
-- Organise Docker hosts into logical groups
-- Schedule automatic updates for all Compose projects across all hosts in the group
-- Independent schedule from server groups
-
-### Project Discovery
-
-On any Docker host card, click **Discover Projects** to scan the host's filesystem for `docker-compose.yml` / `compose.yml` files. Configure the root path and max depth, review results, and register discovered projects in one click.
-
-### NetBox Integration
-
-Go to **Plugins → NetBox** in the sidebar and enter your NetBox URL and a v1 API token (read-only is sufficient). Click **Test Connection** to verify, then **Save**. The token is stored encrypted in the database — no container restart required.
-
-Once configured, use the **Import from NetBox** button on the Servers or Docker Hosts tabs to browse your NetBox VM inventory and import them in bulk. VMs must have the `update-manager` tag and a primary IP set in NetBox. Already-imported IPs are shown as greyed out.
-
-> **Legacy:** You can still set `NETBOX_URL` and `NETBOX_TOKEN` environment variables in `docker-compose.yml`. The UI-configured values take precedence.
-
-### Persistent Data
+## Persistent data
 
 | Directory | Contents |
 |---|---|
@@ -151,20 +55,19 @@ Once configured, use the **Import from NetBox** button on the Servers or Docker 
 | `./ssh-keys/` | Uploaded SSH private keys |
 | `./logs/` | Application logs |
 
-Data survives container restarts and image updates.
+## Credits
 
-## Technology Stack
+Built with assistance from Claude Code AI.
 
-- **Backend**: Node.js + Express.js
-- **Database**: SQLite 3
-- **SSH**: node-ssh
-- **Scheduling**: node-cron
-- **Progress Streaming**: Server-Sent Events (SSE)
-- **Encryption**: AES-256-GCM (Node.js `crypto`)
-- **Frontend**: Vanilla JavaScript + Tailwind CSS
-- **Deployment**: Docker + Docker Compose
+## License
 
-## API Endpoints
+Proprietary - All rights reserved
+
+---
+
+## For the geeks: API reference
+
+If you want to automate things or build on top of homelab-updater, here are all the endpoints.
 
 ### Servers
 | Method | Path | Description |
@@ -222,7 +125,7 @@ Data survives container restarts and image updates.
 ### Credentials
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/credentials` | List credentials (no secrets) |
+| `GET` | `/api/credentials` | List credentials (no secrets returned) |
 | `POST` | `/api/credentials` | Add credential |
 | `DELETE` | `/api/credentials/:id` | Delete credential |
 
@@ -246,68 +149,3 @@ Data survives container restarts and image updates.
 | `GET` | `/api/webhooks` | List webhooks |
 | `POST` | `/api/webhooks` | Add webhook |
 | `DELETE` | `/api/webhooks/:id` | Delete webhook |
-
-## Security Notes
-
-- **Firewall**: Restrict access to port 3000 to trusted IPs only
-- **Reverse Proxy**: Use Nginx/Apache with SSL in production
-- **Encryption Key**: Back up `./data/encryption.key` — losing it means stored credentials cannot be decrypted
-- **SSH Keys**: Ensure proper file permissions (`chmod 600`) on uploaded keys
-- **NetBox Token**: Configure via **Plugins → NetBox** in the UI — the token is encrypted with AES-256-GCM and stored in the database. If using env vars instead, do not commit them to version control
-- **Backups**: Regularly back up the `./data/` directory
-
-## Directory Structure
-
-```
-update-manager/
-├── server.js              # Express application entry point
-├── db/
-│   └── index.js           # SQLite setup and migrations
-├── routes/
-│   ├── servers.js         # Server CRUD + update + SSE
-│   ├── groups.js          # Server group CRUD + update + SSE
-│   ├── docker.js          # Docker host/project/group routes + discover
-│   ├── credentials.js     # Credential vault routes
-│   ├── netbox.js          # NetBox import routes
-│   ├── webhooks.js        # Webhook routes
-│   ├── logs.js            # Update log routes
-│   └── dashboard.js       # Dashboard summary route
-├── services/
-│   ├── ssh.js             # SSH connection helpers
-│   ├── update.js          # Server update logic + logUpdate
-│   ├── docker.js          # Docker update logic
-│   ├── scheduler.js       # node-cron auto-update scheduler
-│   ├── activity.js        # Global SSE activity broadcast
-│   ├── netbox.js          # NetBox API client
-│   └── notifications.js   # Webhook dispatch
-├── utils/
-│   └── crypto.js          # AES-256-GCM encrypt/decrypt
-├── public/
-│   ├── index.html         # Single-page UI
-│   └── script.js          # Frontend logic
-├── data/                  # SQLite database + encryption key (runtime)
-├── ssh-keys/              # Uploaded SSH keys (runtime)
-├── logs/                  # Application logs (runtime)
-├── Dockerfile
-├── docker-compose.yml
-├── INSTALL.md
-└── README.md
-```
-
-## Scheduled Updates
-
-The scheduler checks every minute whether any group is due for an update based on:
-
-1. Current time is past the configured start date
-2. Enough time has elapsed since the last update (based on the configured interval)
-3. The group has an interval and interval unit configured
-
-When a scheduled update fires, the live **Activity Panel** (bottom-right) appears in all connected browsers showing real-time progress. Logs and the dashboard refresh automatically when it completes.
-
-## Credits
-
-Built with assistance from Claude Code AI.
-
-## License
-
-Proprietary - All rights reserved
