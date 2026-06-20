@@ -1,7 +1,7 @@
 const https = require('https');
 const { URL } = require('url');
 
-const REQUIRED_TAG = 'update-manager';
+const ACCEPTED_TAGS = ['homelab-updater', 'update-manager'];
 
 async function getConfig() {
     const { dbGet } = require('../db');
@@ -74,11 +74,16 @@ function mapVm(vm) {
 }
 
 async function getVMs() {
-    const data = await netboxRequest(
-        `/api/virtualization/virtual-machines/?status=active&tag=${REQUIRED_TAG}&limit=1000`
+    const results = await Promise.all(
+        ACCEPTED_TAGS.map(tag =>
+            netboxRequest(`/api/virtualization/virtual-machines/?status=active&tag=${tag}&limit=1000`)
+                .then(data => data.results || [])
+                .catch(() => [])
+        )
     );
-    return (data.results || [])
-        .filter(vm => vm.primary_ip?.address)
+    const seen = new Set();
+    return results.flat()
+        .filter(vm => vm.primary_ip?.address && !seen.has(vm.id) && seen.add(vm.id))
         .map(mapVm);
 }
 

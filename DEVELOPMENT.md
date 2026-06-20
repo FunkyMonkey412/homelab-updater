@@ -11,7 +11,7 @@ Built with: Node.js + Express, SQLite, vanilla JS + Tailwind CSS, Docker.
 ## Directory layout
 
 ```
-/opt/docker/update-manager/
+/opt/docker/homelab-updater/
 ├── server.js                  # Entry point — mounts routers, runs migrations, starts scheduler
 ├── db/index.js                # SQLite connection, promise wrappers, migration runner
 ├── utils/crypto.js            # AES-256-GCM encrypt/decrypt (passwords stored encrypted)

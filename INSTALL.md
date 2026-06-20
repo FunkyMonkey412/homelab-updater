@@ -8,8 +8,8 @@
 ## Install
 
 ```bash
-git clone https://github.com/FunkyMonkey412/update-manager.git
-cd update-manager
+git clone https://github.com/FunkyMonkey412/homelab-updater.git
+cd homelab-updater
 docker compose build
 docker compose up -d
 ```

@@ -1759,7 +1759,7 @@ async function fetchNetboxVMs() {
 function renderNetboxVMTable(vms) {
     const table = document.getElementById('netbox-vm-table');
     if (vms.length === 0) {
-        table.innerHTML = '<div class="p-4 text-sm text-slate-400 text-center">No VMs found with the <code class="bg-slate-700 px-1 rounded text-indigo-300">update-manager</code> tag.</div>';
+        table.innerHTML = '<div class="p-4 text-sm text-slate-400 text-center">No VMs found with the <code class="bg-slate-700 px-1 rounded text-indigo-300">homelab-updater</code> or <code class="bg-slate-700 px-1 rounded text-indigo-300">update-manager</code> tag.</div>';
         return;
     }
 
@@ -2112,7 +2112,7 @@ async function fetchNetboxDockerVMs() {
 function renderNetboxDockerVMTable(vms) {
     const table = document.getElementById('netbox-docker-vm-table');
     if (vms.length === 0) {
-        table.innerHTML = '<div class="p-4 text-sm text-slate-400 text-center">No VMs found with the <code class="bg-slate-700 px-1 rounded text-indigo-300">update-manager</code> tag.</div>';
+        table.innerHTML = '<div class="p-4 text-sm text-slate-400 text-center">No VMs found with the <code class="bg-slate-700 px-1 rounded text-indigo-300">homelab-updater</code> or <code class="bg-slate-700 px-1 rounded text-indigo-300">update-manager</code> tag.</div>';
         return;
     }
 

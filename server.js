@@ -66,7 +66,7 @@ async function start() {
     app.listen(PORT, () => {
         const tz = process.env.TZ || 'System default';
         const now = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
-        console.log(`[server] Server Manager running on port ${PORT}`);
+        console.log(`[server] homelab-updater running on port ${PORT}`);
         console.log(`[server] Timezone: ${tz}  |  Amsterdam time: ${now}`);
     });
 }

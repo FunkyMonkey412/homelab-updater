@@ -15,7 +15,7 @@ function buildEmbed({ entity_type, entity_name, update_type, success, message })
                 { name: 'Status', value: success ? 'Success' : 'Failed', inline: true }
             ],
             timestamp: new Date().toISOString(),
-            footer: { text: 'Server Manager' }
+            footer: { text: 'homelab-updater' }
         }]
     };
 }
@@ -73,10 +73,10 @@ async function sendTestNotification(webhookUrl) {
     const payload = {
         embeds: [{
             title: '🔔 Test notification',
-            description: 'Your Server Manager webhook is configured correctly.',
+            description: 'Your homelab-updater webhook is configured correctly.',
             color: 3447003,
             timestamp: new Date().toISOString(),
-            footer: { text: 'Server Manager' }
+            footer: { text: 'homelab-updater' }
         }]
     };
     await postToDiscord(webhookUrl, payload);

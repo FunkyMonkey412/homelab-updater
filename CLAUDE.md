@@ -88,7 +88,7 @@ public/script.js     ~2100 lines of vanilla JS; tab system, forms, SSE listeners
 
 **Docker Compose detection:** v1 (`docker-compose`) vs v2 (`docker compose`) detected per host and cached in `docker_hosts.docker_compose_command`.
 
-**NetBox VMs:** Only VMs tagged `update-manager` and with a primary IP are shown/importable.
+**NetBox VMs:** VMs tagged `homelab-updater` or `update-manager` (legacy) and with a primary IP are shown/importable. Both tags are queried in parallel and deduplicated by VM ID.
 
 ---
 
